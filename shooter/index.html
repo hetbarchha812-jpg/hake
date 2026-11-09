@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Simple Shooter</title>
+<style>
+html,body{margin:0;height:100%;background:#111;overflow:hidden;touch-action:none;font-family:sans-serif}
+canvas{display:block;width:100%;height:100%}
+#ui{position:fixed;top:8px;left:8px;right:8px;display:flex;justify-content:space-between;color:#fff;font-size:16px;pointer-events:none}
+#aa{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);padding:10px 18px;border:0;border-radius:20px;background:#2d8cff;color:#fff;font-size:15px}
+</style></head><body>
+<canvas id="c"></canvas>
+<div id="ui"><span id="score">Score: 0</span><span id="hp">HP: 100</span></div>
+<button id="aa">Auto-aim: ON</button>
+<script>
+const cv=document.getElementById('c'),ctx=cv.getContext('2d');
+let W,H;function rs(){W=cv.width=innerWidth;H=cv.height=innerHeight}rs();onresize=rs;
+const P={x:W/2,y:H/2,r:16,angle:0,hp:100,speed:3};
+let enemies=[],bullets=[],score=0,over=false,autoAim=true,lastShot=0,spawnT=0;
+const move={x:0,y:0};let joy=null,aimPt=null;
+
+document.getElementById('aa').onclick=e=>{autoAim=!autoAim;e.target.textContent='Auto-aim: '+(autoAim?'ON':'OFF')};
+
+addEventListener('touchstart',e=>{for(const t of e.changedTouches){
+ if(t.target.id==='aa')continue;
+ if(t.clientX<W/2){joy={id:t.identifier,x:t.clientX,y:t.clientY}}
+ else{aimPt={id:t.identifier,x:t.clientX,y:t.clientY}}}
+ if(over){reset()}},{passive:true});
+addEventListener('touchmove',e=>{for(const t of e.changedTouches){
+ if(joy&&t.identifier===joy.id){let dx=t.clientX-joy.x,dy=t.clientY-joy.y,d=Math.hypot(dx,dy)||1,m=Math.min(d,50)/50;move.x=dx/d*m;move.y=dy/d*m}
+ if(aimPt&&t.identifier===aimPt.id){aimPt.x=t.clientX;aimPt.y=t.clientY}}},{passive:true});
+addEventListener('touchend',e=>{for(const t of e.changedTouches){
+ if(joy&&t.identifier===joy.id){joy=null;move.x=move.y=0}
+ if(aimPt&&t.identifier===aimPt.id){aimPt=null}}},{passive:true});
+// PC testing
+const keys={};addEventListener('keydown',e=>keys[e.key]=1);addEventListener('keyup',e=>keys[e.key]=0);
+addEventListener('mousedown',e=>{aimPt={x:e.clientX,y:e.clientY};if(over)reset()});
+addEventListener('mousemove',e=>{if(aimPt){aimPt.x=e.clientX;aimPt.y=e.clientY}});
+addEventListener('mouseup',()=>aimPt=null);
+
+function reset(){enemies=[];bullets=[];score=0;P.hp=100;P.x=W/2;P.y=H/2;over=false}
+function nearest(){let b=null,bd=1e9;for(const e of enemies){const d=Math.hypot(e.x-P.x,e.y-P.y);if(d<bd){bd=d;b=e}}return b}
+function spawn(){const s=Math.floor(Math.random()*4);let x,y;
+ if(s==0){x=Math.random()*W;y=-20}else if(s==1){x=W+20;y=Math.random()*H}
+ else if(s==2){x=Math.random()*W;y=H+20}else{x=-20;y=Math.random()*H}
+ enemies.push({x,y,r:14,hp:2,sp:1+Math.min(score/300,1.5)})}
+function shoot(a){bullets.push({x:P.x,y:P.y,vx:Math.cos(a)*9,vy:Math.sin(a)*9})}
+
+function update(t){
+ if(over)return;
+ let mx=move.x,my=move.y;
+ if(keys.a)mx-=1;if(keys.d)mx+=1;if(keys.w)my-=1;if(keys.s)my+=1;
+ P.x=Math.max(P.r,Math.min(W-P.r,P.x+mx*P.speed));
+ P.y=Math.max(P.r,Math.min(H-P.r,P.y+my*P.speed));
+ if(t-spawnT>Math.max(400,1200-score*2)){spawn();spawnT=t}
+ // aim: auto-aim ON = nearest enemy ko smooth rite lock; OFF = manual touch
+ if(autoAim){const e=nearest();if(e){const ta=Math.atan2(e.y-P.y,e.x-P.x);
+   let d=Math.atan2(Math.sin(ta-P.angle),Math.cos(ta-P.angle));P.angle+=d*0.2}}
+ else if(aimPt){P.angle=Math.atan2(aimPt.y-P.y,aimPt.x-P.x)}
+ const firing=autoAim?enemies.length>0:!!aimPt;
+ if(firing&&t-lastShot>220){shoot(P.angle);lastShot=t}
+ for(const b of bullets){b.x+=b.vx;b.y+=b.vy}
+ bullets=bullets.filter(b=>b.x>-20&&b.x<W+20&&b.y>-20&&b.y<H+20);
+ for(const e of enemies){const a=Math.atan2(P.y-e.y,P.x-e.x);e.x+=Math.cos(a)*e.sp;e.y+=Math.sin(a)*e.sp;
+  if(Math.hypot(e.x-P.x,e.y-P.y)<e.r+P.r){P.hp-=0.5;if(P.hp<=0){P.hp=0;over=true}}}
+ for(const b of bullets)for(const e of enemies){
+  if(!b.dead&&Math.hypot(b.x-e.x,b.y-e.y)<e.r+3){b.dead=1;e.hp--;if(e.hp<=0){e.dead=1;score+=10}}}
+ bullets=bullets.filter(b=>!b.dead);enemies=enemies.filter(e=>!e.dead);
+ document.getElementById('score').textContent='Score: '+score;
+ document.getElementById('hp').textContent='HP: '+Math.ceil(P.hp);
+}
+function draw(){
+ ctx.fillStyle='#111';ctx.fillRect(0,0,W,H);
+ ctx.fillStyle='#e74c3c';for(const e of enemies){ctx.beginPath();ctx.arc(e.x,e.y,e.r,0,7);ctx.fill()}
+ ctx.fillStyle='#ffd34d';for(const b of bullets){ctx.beginPath();ctx.arc(b.x,b.y,3,0,7);ctx.fill()}
+ ctx.save();ctx.translate(P.x,P.y);ctx.rotate(P.angle);
+ ctx.fillStyle='#2d8cff';ctx.beginPath();ctx.arc(0,0,P.r,0,7);ctx.fill();
+ ctx.fillStyle='#fff';ctx.fillRect(P.r-2,-3,14,6);ctx.restore();
+ if(joy){ctx.strokeStyle='#fff3';ctx.beginPath();ctx.arc(joy.x,joy.y,50,0,7);ctx.stroke()}
+ if(over){ctx.fillStyle='#fff';ctx.font='32px sans-serif';ctx.textAlign='center';
+  ctx.fillText('Game Over - Score '+score,W/2,H/2);ctx.font='18px sans-serif';ctx.fillText('Tap to restart',W/2,H/2+34)}
+}
+function loop(t){update(t);draw();requestAnimationFrame(loop)}
+requestAnimationFrame(loop);
+</script></body></html>
